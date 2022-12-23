@@ -1,49 +1,41 @@
 #!/usr/bin/python3
-"""
-script that distributes archive to webservers
-"""
-import os.path
-from fabric.api import *
-from fabric.operations import run, put, sudo
+"""Deploy an archive of static html to my web servers with Fabric3"""
 
-env.hosts = ['100.25.19.204', '54.157.159.85']
-env.user = 'ubuntu'
-env.key_filename = '~/.ssh/alx_server'
+from fabric import api
+from fabric.contrib import files
+import os
+
+
+api.env.hosts = ['100.25.19.204', '54.157.159.85']
+api.env.user = 'ubuntu'
+api.env.key_filename = '~/.ssh/alx_server'
+
 
 def do_deploy(archive_path):
-    """ This function distributes an archive to your web servers"""
-    if (os.path.isfile(archive_path) is False):
+    """Function to transfer `archive_path` to web servers.
+    Args:
+        archive_path (str): path of the .tgz file to transfer
+    Returns: True on success, False otherwise.
+    """
+    if not os.path.isfile(archive_path):
         return False
-
-    try:
-        new_comp = archive_path.split("/")[-1]
-        new_folder = ("/data/web_static/releases/" + new_comp.split(".")[0])
-
-        # Upload the archive to the /tmp/ directory of the web server
-        put(archive_path, "/tmp/")
-
-        # Uncompress the archive to the folder /data/web_static/releases/<archive filename
-        # without extension> on the web server
-        run("sudo mkdir -p {}".format(new_folder))
-        run("sudo tar -xzf /tmp/{} -C {}".
-            format(new_comp, new_folder))
-
-        # Delete the archive from the web server
-        run("sudo rm /tmp/{}".format(new_comp))
-
-		# move contents into host web_static
-        run("sudo mv {}/web_static/* {}/".format(new_folder, new_folder))
-        
-        # remove extraneous web_static dir
-        run("sudo rm -rf {}/web_static".format(new_folder))
-
-        # Delete the symbolic link /data/web_static/current from the web server
-        run('sudo rm -rf /data/web_static/current')
-
-        # Create a new the symbolic link /data/web_static/current on the web server,
-        # linked to the new version of your code (/data/web_static/releases/<archive filename without extension>)
-        run("sudo ln -s {} /data/web_static/current".format(new_folder))
-
-        return True
-    except:
-        return False
+    with api.cd('/tmp'):
+        basename = os.path.basename(archive_path)
+        root, ext = os.path.splitext(basename)
+        outpath = '/data/web_static/releases/{}'.format(root)
+        try:
+            putpath = api.put(archive_path)
+            if files.exists(outpath):
+                api.run('rm -rdf {}'.format(outpath))
+            api.run('mkdir -p {}'.format(outpath))
+            api.run('tar -xzf {} -C {}'.format(putpath[0], outpath))
+            api.run('rm -f {}'.format(putpath[0]))
+            api.run('mv -u {}/web_static/* {}'.format(outpath, outpath))
+            api.run('rm -rf {}/web_static'.format(outpath))
+            api.run('rm -rf /data/web_static/current')
+            api.run('ln -sf {} /data/web_static/current'.format(outpath))
+            print('New version deployed!')
+        except:
+            return False
+        else:
+            return True
